@@ -1,0 +1,26 @@
+Episode: How to Build a Product People Love
+Guest: Product Growth Expert
+
+[00:01:20]
+One of the biggest lessons in building products is that founders often start by building too much. Instead, focus on understanding the customer's problem deeply before deciding what the product should look like.
+
+[00:03:45]
+The strongest products usually solve a problem that customers already recognize. If customers do not feel the problem strongly enough, adoption becomes difficult regardless of how good the product is.
+
+[00:07:10]
+When thinking about growth, teams should identify the moment when users first experience meaningful value. This is often called the activation point. Improving activation can have a significant impact on retention and long-term growth.
+
+[00:10:25]
+Another important lesson is to talk to customers continuously. Customer interviews should not only happen before launching a product. They should continue throughout the product lifecycle.
+
+[00:14:40]
+Teams should prioritize experiments that can teach them something quickly. A failed experiment is useful when it produces information that changes what the team does next.
+
+[00:18:05]
+A useful growth strategy is to identify the channels where your ideal customers already spend time. Rather than trying every possible acquisition channel, focus deeply on the channels that show evidence of working.
+
+[00:22:30]
+Product teams should measure outcomes rather than activity. Shipping more features does not necessarily mean creating more customer value.
+
+[00:26:15]
+One of the most important habits for product leaders is maintaining a clear understanding of why a customer chooses the product and why they continue using it.
