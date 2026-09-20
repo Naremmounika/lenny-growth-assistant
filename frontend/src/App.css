@@ -955,6 +955,86 @@ button {
   font-size: 10px;
 }
 
+
+/* =========================
+   ARTIFACT TABS + PREVIEW
+========================= */
+
+.document-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.artifact-type-badge {
+  border: 1px solid #e2e2ea;
+  background: #f7f7fa;
+  color: #777782;
+  padding: 3px 5px;
+  border-radius: 4px;
+  font-size: 6px;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+}
+
+.artifact-tabs {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px;
+  border: 1px solid #e4e4eb;
+  background: #f7f7fa;
+  border-radius: 6px;
+}
+
+.artifact-tab {
+  border: 0;
+  background: transparent;
+  color: #8b8b96;
+  padding: 4px 7px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 7px;
+  font-weight: 700;
+}
+
+.artifact-tab:hover {
+  color: #55555f;
+}
+
+.artifact-tab.active {
+  background: white;
+  color: #5555a0;
+  box-shadow: 0 1px 3px rgba(20, 20, 40, 0.08);
+}
+
+.artifact-preview {
+  flex: 1;
+  min-height: 0;
+  background: #f1f1f4;
+  padding: 10px;
+}
+
+.artifact-iframe {
+  width: 100%;
+  height: 100%;
+  min-height: 420px;
+  display: block;
+  border: 1px solid #e0e0e7;
+  border-radius: 6px;
+  background: white;
+}
+
+.artifact-source {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 9px;
+  line-height: 1.6;
+  color: #4d4d56;
+}
+
 /* =========================
    SCROLLBARS
 ========================= */
@@ -1119,4 +1199,23 @@ button {
     max-width: 75%;
   }
 }
+.artifact-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
 
+.artifact-btn-secondary {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.artifact-btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.artifact-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}

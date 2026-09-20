@@ -1,17 +1,24 @@
 from typing import Any
 
+from sentence_transformers import SentenceTransformer
 from sqlalchemy import text
 
 from app.db.session import AsyncSessionLocal
 
 
 DEFAULT_TOP_K = 5
+DEFAULT_THRESHOLD = 0.35
+EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+
+
+# Load the embedding model once when the module starts.
+embedding_model = SentenceTransformer(EMBEDDING_MODEL)
 
 
 async def search_transcript_chunks(
     query: str,
     top_k: int = DEFAULT_TOP_K,
-    threshold: float = 0.0,
+    threshold: float = DEFAULT_THRESHOLD,
 ) -> list[dict[str, Any]]:
 
     if not query or not query.strip():
@@ -19,29 +26,24 @@ async def search_transcript_chunks(
 
     top_k = max(1, min(top_k, 10))
 
-    words = [
-        word.lower()
-        for word in query.split()
-        if len(word) >= 3
-    ]
+    # Create the same type of embedding that was used
+    # during transcript ingestion.
+    query_embedding = embedding_model.encode(
+        query.strip(),
+        normalize_embeddings=True,
+    ).tolist()
 
-    if not words:
-        return []
-
-    conditions = []
-    params = {"top_k": top_k}
-
-    for index, word in enumerate(words[:10]):
-        key = f"word_{index}"
-        conditions.append(
-            f"LOWER(content) LIKE :{key}"
+    embedding_string = (
+        "["
+        + ",".join(
+            str(value)
+            for value in query_embedding
         )
-        params[key] = f"%{word}%"
-
-    where_clause = " OR ".join(conditions)
+        + "]"
+    )
 
     sql = text(
-        f"""
+        """
         SELECT
             id,
             episode_title,
@@ -50,16 +52,31 @@ async def search_transcript_chunks(
             timestamp,
             topic,
             metadata_json,
-            1.0 AS similarity
+            1 - (
+                embedding <=> CAST(:query_embedding AS vector)
+            ) AS similarity
         FROM transcript_chunks
-        WHERE {where_clause}
-        ORDER BY created_at DESC
+        WHERE embedding IS NOT NULL
+          AND (
+              1 - (
+                  embedding <=> CAST(:query_embedding AS vector)
+              )
+          ) >= :threshold
+        ORDER BY embedding <=> CAST(:query_embedding AS vector)
         LIMIT :top_k
         """
     )
 
     async with AsyncSessionLocal() as session:
-        result = await session.execute(sql, params)
+        result = await session.execute(
+            sql,
+            {
+                "query_embedding": embedding_string,
+                "threshold": threshold,
+                "top_k": top_k,
+            },
+        )
+
         rows = result.mappings().all()
 
     return [

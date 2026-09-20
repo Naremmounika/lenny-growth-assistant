@@ -1,5 +1,4 @@
 import os
-
 from dotenv import load_dotenv
 from sqlalchemy.ext.asyncio import (
     AsyncSession,

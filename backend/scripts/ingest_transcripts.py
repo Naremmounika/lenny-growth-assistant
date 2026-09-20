@@ -1,18 +1,17 @@
+import asyncio
+import json
+import re
 import sys
 from pathlib import Path
+
+from sentence_transformers import SentenceTransformer
+from sqlalchemy import text
 
 # Make backend/ available so "app" imports work
 sys.path.insert(
     0,
-    str(Path(__file__).resolve().parent.parent)
+    str(Path(__file__).resolve().parent.parent),
 )
-
-import asyncio
-import json
-import re
-
-from sqlalchemy import text
-from sentence_transformers import SentenceTransformer
 
 from app.db.session import AsyncSessionLocal
 
@@ -39,7 +38,7 @@ EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
 def parse_transcript(file_path: Path):
     """
-    Parse transcript files using this format:
+    Expected transcript format:
 
     Episode: Episode title
     Guest: Guest name
@@ -51,22 +50,20 @@ def parse_transcript(file_path: Path):
     More transcript text...
     """
 
-    content = file_path.read_text(
-        encoding="utf-8"
-    )
+    content = file_path.read_text(encoding="utf-8")
 
-    # Extract episode title
+    # Episode title
     episode_match = re.search(
-        r"Episode:\s*(.+)",
+        r"^Episode:\s*(.+)$",
         content,
-        re.IGNORECASE,
+        flags=re.MULTILINE | re.IGNORECASE,
     )
 
-    # Extract guest name
+    # Guest name
     guest_match = re.search(
-        r"Guest:\s*(.+)",
+        r"^Guest:\s*(.+)$",
         content,
-        re.IGNORECASE,
+        flags=re.MULTILINE | re.IGNORECASE,
     )
 
     episode_title = (
@@ -83,38 +80,31 @@ def parse_transcript(file_path: Path):
 
     # Remove metadata headers
     body = re.sub(
-        r"^Episode:.*$",
+        r"^Episode:\s*.+$",
         "",
         content,
         flags=re.MULTILINE | re.IGNORECASE,
     )
 
     body = re.sub(
-        r"^Guest:.*$",
+        r"^Guest:\s*.+$",
         "",
         body,
         flags=re.MULTILINE | re.IGNORECASE,
     )
 
-    # Find timestamped transcript sections
-    pattern = (
-        r"\[(\d{2}:\d{2}:\d{2})\]\s*"
-        r"(.*?)(?=\n\[\d{2}:\d{2}:\d{2}\]|\Z)"
-    )
-
-    matches = re.findall(
-        pattern,
-        body,
+    # Find timestamped sections
+    pattern = re.compile(
+        r"\[(\d{2}:\d{2}:\d{2})\]\s*(.*?)(?=\n\[\d{2}:\d{2}:\d{2}\]|\Z)",
         flags=re.DOTALL,
     )
+
+    matches = pattern.findall(body)
 
     sections = []
 
     for timestamp, text_content in matches:
-
-        cleaned_text = " ".join(
-            text_content.split()
-        )
+        cleaned_text = " ".join(text_content.split())
 
         if cleaned_text:
             sections.append(
@@ -124,11 +114,19 @@ def parse_transcript(file_path: Path):
                 }
             )
 
-    return (
-        episode_title,
-        guest_name,
-        sections,
-    )
+    # If no timestamps were found, treat the whole body as one section
+    if not sections:
+        cleaned_body = " ".join(body.split())
+
+        if cleaned_body:
+            sections.append(
+                {
+                    "timestamp": None,
+                    "content": cleaned_body,
+                }
+            )
+
+    return episode_title, guest_name, sections
 
 
 # ---------------------------------------------------------
@@ -136,15 +134,16 @@ def parse_transcript(file_path: Path):
 # ---------------------------------------------------------
 
 def chunk_text(
-    text_content,
-    chunk_size=CHUNK_SIZE,
-    overlap=CHUNK_OVERLAP,
+    text_content: str,
+    chunk_size: int = CHUNK_SIZE,
+    overlap: int = CHUNK_OVERLAP,
 ):
     """
-    Split text into overlapping chunks.
+    Split text into overlapping word-based chunks.
 
-    This uses whitespace tokens as a lightweight
-    approximation for token-based chunking.
+    600 words with 100 words of overlap is used as a
+    lightweight approximation of the assignment's
+    500-800 token chunking requirement.
     """
 
     words = text_content.split()
@@ -160,29 +159,48 @@ def chunk_text(
     start = 0
 
     while start < len(words):
+        end = min(start + chunk_size, len(words))
 
-        end = min(
-            start + chunk_size,
-            len(words),
-        )
+        chunk = " ".join(words[start:end]).strip()
 
-        chunk = " ".join(
-            words[start:end]
-        )
+        if chunk:
+            chunks.append(chunk)
 
-        if chunk.strip():
-            chunks.append(
-                chunk.strip()
-            )
-
-        # Stop when we've reached the end
         if end >= len(words):
             break
 
-        # Move forward while keeping overlap
         start = end - overlap
 
     return chunks
+
+
+# ---------------------------------------------------------
+# Embedding helper
+# ---------------------------------------------------------
+
+def create_embedding(model, text_content: str):
+    """
+    Create a 384-dimensional embedding using
+    all-MiniLM-L6-v2.
+    """
+
+    embedding = model.encode(
+        text_content,
+        normalize_embeddings=True,
+    )
+
+    return embedding.tolist()
+
+
+def embedding_to_pgvector(embedding):
+    """
+    Convert Python list to PostgreSQL pgvector format.
+    """
+
+    return "[" + ",".join(
+        str(float(value))
+        for value in embedding
+    ) + "]"
 
 
 # ---------------------------------------------------------
@@ -199,8 +217,7 @@ async def ingest():
 
     print("Embedding model loaded.")
 
-    # Find transcript files
-    transcript_files = list(
+    transcript_files = sorted(
         TRANSCRIPTS_DIR.glob("*.txt")
     )
 
@@ -216,23 +233,17 @@ async def ingest():
         f"transcript file(s)."
     )
 
-    # Open database session
     async with AsyncSessionLocal() as session:
 
         for file_path in transcript_files:
 
-            print(
-                f"\nProcessing: "
-                f"{file_path.name}"
-            )
+            print()
+            print("=" * 60)
+            print(f"Processing: {file_path.name}")
+            print("=" * 60)
 
-            # Parse transcript
-            (
-                episode_title,
-                guest_name,
-                sections,
-            ) = parse_transcript(
-                file_path
+            episode_title, guest_name, sections = (
+                parse_transcript(file_path)
             )
 
             print(
@@ -249,43 +260,40 @@ async def ingest():
 
             total_chunks = 0
 
-            # Process each timestamp section
             for section in sections:
 
                 chunks = chunk_text(
                     section["content"]
                 )
 
-                for chunk_index, chunk in enumerate(
-                    chunks
-                ):
+                for chunk_index, chunk in enumerate(chunks):
 
-                    # Generate embedding
-                    embedding = model.encode(
-                        chunk
-                    ).tolist()
-
-                    # Convert Python list to pgvector format
-                    embedding_string = (
-                        "["
-                        + ",".join(
-                            str(value)
-                            for value in embedding
-                        )
-                        + "]"
+                    embedding = create_embedding(
+                        model,
+                        chunk,
                     )
 
-                    # Metadata
+                    # Confirm expected embedding size
+                    if len(embedding) != 384:
+                        raise ValueError(
+                            f"Expected 384 dimensions, "
+                            f"got {len(embedding)}"
+                        )
+
+                    embedding_string = (
+                        embedding_to_pgvector(
+                            embedding
+                        )
+                    )
+
                     metadata = {
                         "source_file": file_path.name,
                         "chunk_index": chunk_index,
                     }
 
-                    # Insert into PostgreSQL
-                    query = text(
+                    insert_query = text(
                         """
-                        INSERT INTO transcript_chunks
-                        (
+                        INSERT INTO transcript_chunks (
                             episode_title,
                             guest_name,
                             content,
@@ -294,8 +302,7 @@ async def ingest():
                             metadata_json,
                             embedding
                         )
-                        VALUES
-                        (
+                        VALUES (
                             :episode_title,
                             :guest_name,
                             :content,
@@ -308,27 +315,28 @@ async def ingest():
                     )
 
                     await session.execute(
-                        query,
+                        insert_query,
                         {
                             "episode_title": episode_title,
                             "guest_name": guest_name,
                             "content": chunk,
-                            "timestamp": section[
-                                "timestamp"
-                            ],
+                            "timestamp": section["timestamp"],
                             "topic": None,
-                            "metadata_json": json.dumps(
-                                metadata
-                            ),
+                            "metadata_json": json.dumps(metadata),
                             "embedding": embedding_string,
                         },
                     )
 
                     total_chunks += 1
 
-            # Commit this transcript
+                    print(
+                        f"  Inserted chunk "
+                        f"{total_chunks}"
+                    )
+
             await session.commit()
 
+            print()
             print(
                 f"Inserted {total_chunks} "
                 f"chunk(s)."
@@ -338,10 +346,10 @@ async def ingest():
                 f"Finished: {file_path.name}"
             )
 
-    print(
-        "\nTranscript ingestion "
-        "completed successfully."
-    )
+    print()
+    print("=" * 60)
+    print("Transcript ingestion completed successfully.")
+    print("=" * 60)
 
 
 # ---------------------------------------------------------

@@ -77,8 +77,7 @@ async def answer_question(request: AnswerRequest):
 
         results = await search_transcript_chunks(
             query=request.query,
-            top_k=request.top_k,
-            threshold=0,
+            top_k=request.top_k
         )
 
         answer = await generate_grounded_answer(
